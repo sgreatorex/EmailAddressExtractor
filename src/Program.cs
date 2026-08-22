@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Security;
 
 using HaveIBeenPwned.AddressExtractor.Objects;
 using HaveIBeenPwned.AddressExtractor.Objects.Performance;
@@ -57,7 +58,7 @@ public class Program
             await using (var monitor = new AddressExtractorMonitor(runtime, perf))
             {
                 var fileCount = 0L;
-                foreach (var file in files.OrderBy(f => f.Length))
+                foreach (var file in files.OrderBy(GetFileLengthOrMax))
                 {
                     fileCount++;
                     try
@@ -134,4 +135,19 @@ public class Program
 
         return (int)ErrorCode.NoError;
     }
+
+    private static long GetFileLengthOrMax(FileInfo file)
+    {
+        try
+        {
+            return file.Length;
+        }
+        catch (Exception ex) when (IsSkippableFileSystemException(ex))
+        {
+            return long.MaxValue;
+        }
+    }
+
+    private static bool IsSkippableFileSystemException(Exception ex)
+        => ex is IOException or UnauthorizedAccessException or NotSupportedException or SecurityException or ArgumentException;
 }
