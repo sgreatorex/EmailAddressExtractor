@@ -1,5 +1,6 @@
 using HaveIBeenPwned.AddressExtractor.Objects;
 
+using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace HaveIBeenPwned.AddressExtractor.Tests;
@@ -61,6 +62,58 @@ public class AddressExtractorTests
 
             Assert.AreEqual(1, result.Count, "One email address should be extracted from the YAML file");
             Assert.AreEqual("yamltest@example.com", result.First(), "The extracted email should match the YAML contents");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+            {
+                File.Delete(tempFile);
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task EmailAddressIsExtractedFromSqliteFileAsync()
+    {
+        var tempFile = Path.Combine(Path.GetTempPath(), $"EmailAddressExtractorTests-{Guid.NewGuid():N}.sqlite");
+
+        try
+        {
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = tempFile,
+                Pooling = false
+            }.ToString();
+
+            await using (var connection = new SqliteConnection(connectionString))
+            {
+                await connection.OpenAsync().ConfigureAwait(false);
+
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    CREATE TABLE users (email TEXT, notes TEXT);
+                    INSERT INTO users (email, notes)
+                    VALUES ('sqlite@example.com', 'backup: sqlite-alt@example.com');
+
+                    CREATE TABLE audit (details TEXT);
+                    INSERT INTO audit (details)
+                    VALUES ('seen by sqlite-audit@example.com');
+                    """;
+
+                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+
+            var result = await ExtractAddressesFromFileAsync(tempFile).ConfigureAwait(false);
+
+            CollectionAssert.AreEquivalent(
+                new[]
+                {
+                    "sqlite@example.com",
+                    "sqlite-alt@example.com",
+                    "sqlite-audit@example.com"
+                },
+                result.ToArray(),
+                "The extractor should parse email addresses from SQLite table data");
         }
         finally
         {
