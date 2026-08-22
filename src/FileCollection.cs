@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Security;
 
 using HaveIBeenPwned.AddressExtractor.Objects;
 
@@ -29,12 +30,33 @@ internal sealed class FileCollection : IEnumerable<FileInfo>
     {
         foreach (var file in inputs)
         {
-            var attributes = File.GetAttributes(file);
+            FileAttributes attributes;
+            try
+            {
+                attributes = File.GetAttributes(file);
+            }
+            catch (Exception ex) when (IsSkippableFileSystemException(ex))
+            {
+                LogSkippedPath(file, ex);
+                continue;
+            }
+
             if (attributes.HasFlag(FileAttributes.Directory))
             {
                 if (!recursed || Config.OperateRecursively)
                 {
-                    foreach (var enumerated in GatherFiles(Directory.EnumerateFileSystemEntries(file), recursed: true))
+                    IEnumerable<string> entries;
+                    try
+                    {
+                        entries = Directory.EnumerateFileSystemEntries(file);
+                    }
+                    catch (Exception ex) when (IsSkippableFileSystemException(ex))
+                    {
+                        LogSkippedPath(file, ex);
+                        continue;
+                    }
+
+                    foreach (var enumerated in GatherFiles(entries, recursed: true))
                     {
                         yield return enumerated;
                     }
@@ -67,11 +89,21 @@ internal sealed class FileCollection : IEnumerable<FileInfo>
         var infos = new ConcurrentDictionary<string, ExtensionInfo>(StringComparer.OrdinalIgnoreCase);
         var count = Files.Count; // Cache the count before removing
 
-        foreach (var file in this)
+        foreach (var file in Files.Values.ToArray())
         {
             var extension = file.Extension is { Length: > 0 } ext ? ext : "(no extension)";
             var info = infos.GetOrAdd(extension, _ => new ExtensionInfo(Runtime, extension.ToLower()));
-            info.AddFile(file);
+
+            try
+            {
+                info.AddFile(file);
+            }
+            catch (Exception ex) when (IsSkippableFileSystemException(ex))
+            {
+                Files.Remove(file.FullName);
+                LogSkippedPath(file.FullName, ex);
+                continue;
+            }
 
             // Remove ignored files
             if (!Config.ProcessAllExtensions && !info.Parsing.Read)
@@ -102,6 +134,20 @@ internal sealed class FileCollection : IEnumerable<FileInfo>
     /// <inheritdoc />
     IEnumerator IEnumerable.GetEnumerator()
         => GetEnumerator();
+
+    private static bool IsSkippableFileSystemException(Exception ex)
+        => ex is IOException or UnauthorizedAccessException or NotSupportedException or SecurityException or ArgumentException;
+
+    private void LogSkippedPath(string path, Exception ex)
+    {
+        if (Config.Debug)
+        {
+            Output.Exception(new IOException($"Skipping '{path}':", ex));
+            return;
+        }
+
+        Output.Notice($"Skipping '{path}': {ex.Message}");
+    }
 
     private class ExtensionInfo(Runtime runtime, string extension)
     {

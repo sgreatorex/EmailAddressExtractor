@@ -173,6 +173,48 @@ public class AddressExtractorTests
     }
 
     [TestMethod]
+    public async Task MissingInputFileIsSkippedAndExtractionContinuesAsync()
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"EmailAddressExtractorTests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+
+        try
+        {
+            var validFile = Path.Combine(tempRoot, "ValidInput.txt");
+            var missingFile = Path.Combine(tempRoot, "MissingInput.txt");
+            var outputPath = Path.Combine(tempRoot, "addresses.txt");
+
+            await File.WriteAllLinesAsync(validFile,
+            [
+                "valid@example.com",
+                "other@example.com"
+            ]).ConfigureAwait(false);
+
+            var exitCode = await Program.Main([validFile, missingFile, "-y", "-o", outputPath]).ConfigureAwait(false);
+
+            Assert.AreEqual(0, exitCode, "Extraction should succeed even if one input file cannot be read");
+
+            var extracted = await File.ReadAllLinesAsync(outputPath).ConfigureAwait(false);
+
+            CollectionAssert.AreEquivalent(
+                new[]
+                {
+                    "other@example.com",
+                    "valid@example.com"
+                },
+                extracted,
+                "Valid files should still be processed when an invalid input path is skipped");
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
+
+    [TestMethod]
     public void EmailAddressesAreNotCaseSensitive()
     {
         const string ADDRESSES = "test@example.com TEST@EXAMPLE.COM";
