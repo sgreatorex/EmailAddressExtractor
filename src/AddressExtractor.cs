@@ -62,7 +62,10 @@ public partial class AddressExtractor
 
         if (EmailValidation.IsValidEmail(match))
         {
-            result = new string(match).ToLowerInvariant();
+            Span<char> lower = stackalloc char[match.Length];
+            match.ToLowerInvariant(lower);
+
+            result = new string(lower);
             return true;
         }
 
