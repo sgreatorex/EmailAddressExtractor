@@ -62,6 +62,9 @@ public class AddressExtractorMonitor : IAsyncDisposable
 
     private async Task ReadAsync(CancellationToken cancellation)
     {
+        // Owned by this task rather than shared with every other one
+        var matcher = AddressExtractor.CreateMatcher();
+
         while (!cancellation.IsCancellationRequested)
         {
             LineBatch batch = default;
@@ -82,7 +85,7 @@ public class AddressExtractorMonitor : IAsyncDisposable
                     for (index = 0; index < batch.Count; index++)
                     {
                         // Extract addresses from the line
-                        foreach (var email in AddressExtractor.ExtractAddresses(lines[index]))
+                        foreach (var email in AddressExtractor.ExtractAddresses(matcher, lines[index]))
                         {
                             batch.Counter.TryAdd(email);
 
