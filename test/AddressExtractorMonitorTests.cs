@@ -233,6 +233,47 @@ public class AddressExtractorMonitorTests
         }
     }
 
+    /// <summary>
+    /// '_' is the one character legal in an alias where an ordinal sort and an
+    /// ordinal-ignore-case sort disagree on lower-case input: it sits between 'Z' and 'a',
+    /// so ordinal places it before letters and ignore-case places it after. The saved
+    /// order has to stay the ignore-case one.
+    /// </summary>
+    [TestMethod]
+    public async Task SavedAddressesOrderUnderscoresAgainstLettersIgnoringCaseAsync()
+    {
+        var builder = new StringBuilder();
+        foreach (var address in new[] { "aab@example.com", "a_b@example.com", "mmn@example.com", "m_n@example.com", "xyz@example.com", "x_z@example.com" })
+        {
+            builder.AppendLine(address);
+        }
+
+        var file = WriteTempFile(Encoding.UTF8.GetBytes(builder.ToString()));
+        try
+        {
+            var result = await RunMonitorAsync([file]).ConfigureAwait(false);
+
+            Assert.AreEqual(6, result.Addresses.Count, "Every address should be extracted");
+
+            var expected = result.Addresses.OrderBy(address => address, StringComparer.OrdinalIgnoreCase).ToList();
+            CollectionAssert.AreEqual(
+                (System.Collections.ICollection)expected,
+                (System.Collections.ICollection)result.Addresses,
+                "Saved addresses should be written in ordinal-ignore-case order"
+            );
+
+            // Spelled out, because an ordinal sort would reverse each of these pairs
+            Assert.IsTrue(
+                result.Addresses.IndexOf("aab@example.com") < result.Addresses.IndexOf("a_b@example.com"),
+                "aab@ should sort before a_b@, as it does on the unmodified reader"
+            );
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
     /// <summary>The saved addresses are sorted, which the parallel sort must preserve</summary>
     [TestMethod]
     public async Task SavedAddressesAreSortedAsync()
@@ -242,7 +283,7 @@ public class AddressExtractorMonitorTests
         {
             var result = await RunMonitorAsync([file]).ConfigureAwait(false);
 
-            var sorted = result.Addresses.OrderBy(address => address, StringComparer.Ordinal).ToList();
+            var sorted = result.Addresses.OrderBy(address => address, StringComparer.OrdinalIgnoreCase).ToList();
             CollectionAssert.AreEqual((System.Collections.ICollection)sorted, (System.Collections.ICollection)result.Addresses, "Saved addresses should be written in ordinal order");
         }
         finally

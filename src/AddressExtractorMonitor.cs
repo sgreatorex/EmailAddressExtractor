@@ -260,12 +260,12 @@ public class AddressExtractorMonitor : IAsyncDisposable
             if (sorted.Length >= ParallelSortThreshold)
             {
                 sorted = sorted.AsParallel()
-                    .OrderBy(address => address, StringComparer.Ordinal)
+                    .OrderBy(address => address, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
             }
             else
             {
-                Array.Sort(sorted, StringComparer.Ordinal);
+                Array.Sort(sorted, StringComparer.OrdinalIgnoreCase);
             }
 
             // File.WriteAllLinesAsync buffers 4 KB at a time, which is a lot of flushes across a result set this size.
