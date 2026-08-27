@@ -116,7 +116,12 @@ public sealed class Config
         public const bool SKIP_PROMPTS = false;
         public const bool SKIP_EXCEPTIONS = false;
 
-        public const int CHANNELS = 4;
+        /// <summary>
+        /// Parsing tasks are CPU-bound, so the sensible default is the width of the
+        /// machine the tool happens to be running on. A fixed 4 left larger hosts idle
+        /// and is no cheaper on smaller ones.
+        /// </summary>
+        public static readonly int CHANNELS = Environment.ProcessorCount;
 
         /// <summary>
         /// Lines per channel item. Large enough that the channel handoff is a rounding
