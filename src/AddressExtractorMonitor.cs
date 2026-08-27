@@ -252,12 +252,29 @@ public class AddressExtractorMonitor : IAsyncDisposable
         var report = Config.ReportFilePath;
         if (!string.IsNullOrWhiteSpace(output))
         {
-            await File.WriteAllLinesAsync(
-                output,
-                Addresses.Keys.Select(address => address.ToLowerInvariant())
-                    .OrderBy(address => address, StringComparer.OrdinalIgnoreCase),
-                cancellation
-            ).ConfigureAwait(false);
+            var sorted = Addresses.Keys.ToArray();
+
+            if (sorted.Length >= ParallelSortThreshold)
+            {
+                sorted = sorted.AsParallel()
+                    .OrderBy(address => address, StringComparer.Ordinal)
+                    .ToArray();
+            }
+            else
+            {
+                Array.Sort(sorted, StringComparer.Ordinal);
+            }
+
+            // File.WriteAllLinesAsync buffers 4 KB at a time, which is a lot of flushes across a result set this size.
+            var stream = new FileStream(output, FileMode.Create, FileAccess.Write, FileShare.None, WriteBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            await using (var writer = new StreamWriter(stream, OutputEncoding, WriteBufferSize))
+            {
+                foreach (var address in sorted)
+                {
+                    cancellation.ThrowIfCancellationRequested();
+                    await writer.WriteLineAsync(address).ConfigureAwait(false);
+                }
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(report))
@@ -280,6 +297,18 @@ public class AddressExtractorMonitor : IAsyncDisposable
         await _timer.DisposeAsync().ConfigureAwait(false);
         Stopwatch.Stop();
     }
+
+    /// <summary>Result-set size past which ordering is worth parallelising</summary>
+    private const int ParallelSortThreshold = 250_000;
+
+    /// <summary>Buffer used when writing the collected addresses back out</summary>
+    private const int WriteBufferSize = 256 * 1024;
+
+    /// <summary>
+    /// UTF-8 without a byte order mark, matching what <see cref="File.WriteAllLinesAsync(string, IEnumerable{string}, CancellationToken)"/>
+    /// emits. <see cref="Encoding.UTF8"/> would prepend a BOM and change the output.
+    /// </summary>
+    private static readonly Encoding OutputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
     internal static async ValueTask<(bool ContainsAtSymbol, long BytesRead)> QuickScanForAtSymbolAsync(FileInfo file, CancellationToken cancellation = default)
     {

@@ -177,6 +177,30 @@ public class AddressExtractorMonitorTests
     }
 
     /// <summary>
+    /// The output is written through an explicit writer rather than File.WriteAllLinesAsync,
+    /// which makes the encoding this file's responsibility. Encoding.UTF8 would prepend a
+    /// byte order mark and silently change the output for everything downstream.
+    /// </summary>
+    [TestMethod]
+    public async Task OutputIsWrittenWithoutAByteOrderMarkAsync()
+    {
+        var file = WriteAddressFile(count: 16);
+        try
+        {
+            var result = await RunMonitorAsync([file]).ConfigureAwait(false);
+
+            Assert.IsTrue(result.RawOutput.Length >= 3, "The output should not be empty");
+
+            var hasBom = result.RawOutput[0] == 0xEF && result.RawOutput[1] == 0xBB && result.RawOutput[2] == 0xBF;
+            Assert.IsFalse(hasBom, "The saved addresses should not start with a UTF-8 byte order mark");
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    /// <summary>
     /// Batching is a throughput concern and must not be observable in the results, so the
     /// same input has to yield the same addresses whatever size the batches are. A batch
     /// size of 1 is the line at a time behaviour the batching replaced.
@@ -202,6 +226,24 @@ public class AddressExtractorMonitorTests
                     $"A batch size of {batchSize} should yield the same addresses as one line at a time"
                 );
             }
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    /// <summary>The saved addresses are sorted, which the parallel sort must preserve</summary>
+    [TestMethod]
+    public async Task SavedAddressesAreSortedAsync()
+    {
+        var file = WriteAddressFile(count: 3000);
+        try
+        {
+            var result = await RunMonitorAsync([file]).ConfigureAwait(false);
+
+            var sorted = result.Addresses.OrderBy(address => address, StringComparer.Ordinal).ToList();
+            CollectionAssert.AreEqual((System.Collections.ICollection)sorted, (System.Collections.ICollection)result.Addresses, "Saved addresses should be written in ordinal order");
         }
         finally
         {
