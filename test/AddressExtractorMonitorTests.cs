@@ -138,6 +138,45 @@ public class AddressExtractorMonitorTests
     }
 
     /// <summary>
+    /// Reading stops on a null returned at end of stream, which a line containing a NUL
+    /// character must not be mistaken for. Line terminators are also recognised
+    /// independently of <see cref="Environment.NewLine"/>.
+    /// </summary>
+    [TestMethod]
+    public async Task LineEndingsAndEmbeddedNullsAreHandledAsync()
+    {
+        const byte NUL = 0x00;
+
+        (string Name, byte[] Content, int Expected)[] cases =
+        [
+            ("lf", "a@example.com\nb@example.com\n"u8.ToArray(), 2),
+            ("crlf", "a@example.com\r\nb@example.com\r\n"u8.ToArray(), 2),
+            ("cr", "a@example.com\rb@example.com\r"u8.ToArray(), 2),
+            ("no trailing newline", "a@example.com\nb@example.com"u8.ToArray(), 2),
+            ("mixed", "a@example.com\r\nb@example.com\nc@example.com\rd@example.com"u8.ToArray(), 4),
+            ("blank lines", "a@example.com\n\n\nb@example.com\n"u8.ToArray(), 2),
+            ("empty", [], 0),
+            ("nul inside a line", [.. "a@example.com"u8, NUL, .. "junk\nb@example.com\n"u8], 2),
+            ("nul as a whole line", [.. "a@example.com\n"u8, NUL, .. "\nb@example.com\n"u8], 2),
+        ];
+
+        foreach ((var name, var content, var expected) in cases)
+        {
+            var file = WriteTempFile(content);
+            try
+            {
+                var result = await RunMonitorAsync([file]).ConfigureAwait(false);
+
+                Assert.AreEqual(expected, result.Addresses.Count, $"Input using {name} should yield {expected} addresses");
+            }
+            finally
+            {
+                File.Delete(file);
+            }
+        }
+    }
+
+    /// <summary>
     /// Batching is a throughput concern and must not be observable in the results, so the
     /// same input has to yield the same addresses whatever size the batches are. A batch
     /// size of 1 is the line at a time behaviour the batching replaced.
