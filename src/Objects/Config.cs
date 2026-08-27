@@ -50,6 +50,11 @@ public sealed class Config
     [Range(1, 1000)]
     public int Threads { get; private set; } = Defaults.CHANNELS;
 
+    /// <summary>The number of lines handed to a parsing <see cref="Task"/> at a time</summary>
+    [CommandLineOption("batch-size", Description = "Specifies the number of lines handed to each parsing Task at a time. 1 restores the previous line at a time behaviour")]
+    [Range(1, 65536)]
+    public int BatchSize { get; private set; } = Defaults.BATCH_SIZE;
+
     /// <summary>If all files should be processed regardless of extension type</summary>
     [CommandLineOption("processAllExtensions", Description = "Process all files regardless of their extension type")]
     public bool ProcessAllExtensions { get; private set; } = Defaults.PROCESS_ALL_EXTENSIONS;
@@ -93,8 +98,8 @@ public sealed class Config
     }
     #endregion
 
-    public Channel<Line> CreateChannel()
-        => Channel.CreateBounded<Line>(new BoundedChannelOptions(Threads * 3)
+    public Channel<LineBatch> CreateChannel()
+        => Channel.CreateBounded<LineBatch>(new BoundedChannelOptions(Threads * 3)
         {
             SingleWriter = true, // Only one instance of `ILineReader` is used at a time
             SingleReader = false,
@@ -112,6 +117,12 @@ public sealed class Config
         public const bool SKIP_EXCEPTIONS = false;
 
         public const int CHANNELS = 4;
+
+        /// <summary>
+        /// Lines per channel item. Large enough that the channel handoff is a rounding
+        /// error against the parsing work, small enough that the parsing tasks stay fed.
+        /// </summary>
+        public const int BATCH_SIZE = 1024;
 
         public const bool DEBUG = false;
         public const bool QUIET = false;
